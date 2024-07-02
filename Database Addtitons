@@ -1,0 +1,158 @@
+CREATE DATABASE [Landing]
+
+
+CREATE TABLE [Landing].[dbo].[jobsequence_test](
+	[jobid] [int] NULL,
+	[Jobtype] [varchar](5) NULL,
+	[Jobname] [varchar](255) NULL,
+	[SQLText] [varchar](1000) NULL,
+	[SQLTextSucessResult] [varchar](100) NULL,
+	[parentid_1] [int] NULL,
+	[parentid_2] [int] NULL,
+	[parentid_3] [int] NULL,
+	[status] [int] NULL,
+	[isHold] [bit] NULL,
+	[starttime] [datetime] NULL,
+	[endtime] [datetime] NULL
+) 
+
+CREATE   PROCEDURE [dbo].[usp_RunJobSequence]
+AS
+IF EXISTS (SELECT 1 FROM sys.dm_server_services WHERE servicename like '%SQL%SERVER%AGENT%' AND status = 4)
+BEGIN
+
+update T set T.status = H.run_status, T.endtime = DATEADD(SECOND, 
+            ((run_duration / 10000) * 3600) + (((run_duration % 10000) / 100) * 60) + (run_duration % 100),
+            CAST(CONVERT(VARCHAR(10), run_date, 112) + ' ' + 
+                 STUFF(STUFF(RIGHT('000000' + CAST(run_time AS VARCHAR(6)), 6), 3, 0, ':'), 6, 0, ':')
+            AS DATETIME)) from Landing..jobsequence_test T inner join msdb..sysjobs J on J.name = T.Jobname
+inner join msdb..sysjobhistory H on J.job_id = H.job_id 
+and T.starttime = CAST(CAST(H.run_date AS VARCHAR) + ' '
++ LEFT(RIGHT('000000' + CAST(H.run_time AS VARCHAR), 6), 2) + ':'
+ + SUBSTRING(RIGHT('000000' + CAST(H.run_time AS VARCHAR), 6), 3, 2)
+ + ':' + RIGHT(RIGHT('000000' + CAST(H.run_time AS VARCHAR), 6), 2) AS DATETIME)
+where T.status = 4 
+
+
+
+DECLARE @state_value INT = (select value from Landing.dbo.jobsequence_State where conditionname = 'IsJobStartorStop');
+
+IF (@state_value = 1)
+BEGIN
+
+DECLARE @col nvarchar(255), @jobid int, @jobtype nvarchar(10), @sqltext nvarchar(500), @sqltextsuccessresult nvarchar(50), @cmd nvarchar(max); 
+
+DECLARE getinfo cursor for select jobid, jobtype, jobname, sqltext, sqltextsucessresult from Landing..jobsequence_test where (parentid_1 is NULL and parentid_2 is NULL and parentid_3 is NULL and status = -1 and isHold = 0)
+UNION 
+select A.jobid, A.jobtype, A.jobname, A.sqltext, A.sqltextsucessresult from Landing..jobsequence_test A inner join Landing..jobsequence_test B on A.parentid_1 = B.jobid where B.status = 1 and A.status = -1 and A.isHold = 0
+UNION
+select A.jobid, A.jobtype, A.jobname, A.sqltext, A.sqltextsucessresult from Landing..jobsequence_test A inner join Landing..jobsequence_test B on A.parentid_2 = B.jobid where B.status = 1 and A.status = -1 and A.isHold = 0
+UNION
+select A.jobid, A.jobtype, A.jobname, A.sqltext, A.sqltextsucessresult from Landing..jobsequence_test A inner join Landing..jobsequence_test B on A.parentid_3 = B.jobid where B.status = 1 and A.status = -1 and A.isHold = 0
+OPEN getinfo FETCH NEXT FROM getinfo into @jobid, @jobtype, @col, @sqltext, @sqltextsuccessresult
+
+WHILE @@FETCH_STATUS = 0  
+BEGIN
+IF @jobtype = 'J'
+BEGIN
+BEGIN TRY
+	PRINT 'JOB'
+ --SELECT @cmd = 'EXEC msdb.dbo.sp_start_job N''' + @col + '''' 
+ --EXEC SP_EXECUTESQL @cmd
+
+ DECLARE @job_name NVARCHAR(128);
+SET @job_name = @col;  -- Assuming @col contains the job name
+
+SET @cmd = N'EXEC msdb.dbo.sp_start_job @job_name';
+
+DECLARE @param_definition NVARCHAR(MAX);
+SET @param_definition = N'@job_name NVARCHAR(128)';
+
+EXEC sp_executesql @cmd, @param_definition, @job_name = @job_name;
+
+
+ WAITFOR DELAY '00:00:01';
+ SELECT @cmd = 'update Landing..jobsequence_test set status = 4 where jobId = ' +  CAST(@jobid AS NVARCHAR(10)) EXEC SP_EXECUTESQL @cmd
+ SELECT @cmd = 'update Landing..jobsequence_test set endtime = NULL, starttime = (select top 1 start_execution_date from msdb..sysjobactivity A left join msdb..sysjobs B on A.job_id = B.job_id where B.name = ''' + @col + ''' order by start_execution_date desc) where jobid = ' + 
+	CAST(@jobid AS NVARCHAR(10))
+	EXEC SP_EXECUTESQL @cmd
+
+END TRY
+BEGIN CATCH
+	 SELECT @cmd = 'update Landing..jobsequence_test set status = 0 where jobId = ' +  CAST(@jobid AS NVARCHAR(10)) EXEC SP_EXECUTESQL @cmd
+END CATCH
+END
+
+IF @jobtype = 'SQL'
+BEGIN
+	PRINT 'SQL'
+
+
+BEGIN TRY
+	Declare @result nvarchar(50);
+	DECLARE @SQL NVARCHAR(MAX);
+	SET @SQL = @sqltext
+	DECLARE @ParamDefinition NVARCHAR(MAX);
+	SET @ParamDefinition = N'@result NVARCHAR(50) OUTPUT';
+	EXEC sp_executesql @SQL, @ParamDefinition, @result = @result OUTPUT;
+	Declare @comparevalue nvarchar(50);
+	select @comparevalue = @sqltextsuccessresult
+		IF @result = @comparevalue
+		BEGIN
+			PRINT 'Success'
+	 SELECT @cmd = 'update Landing..jobsequence_test set status = 1, starttime = GETDATE(), endtime = GETDATE() where jobId = ' +  CAST(@jobid AS NVARCHAR(10)) 
+	 PRINT @cmd
+	 EXEC SP_EXECUTESQL @cmd
+	 END
+		ELSE
+			BEGIN
+				PRINT 'Failure'
+				SELECT @cmd = 'update Landing..jobsequence_test set status = 0, starttime = GETDATE(), endtime = GETDATE() where jobId = ' +  CAST(@jobid AS NVARCHAR(10)) 
+				PRINT @cmd
+				EXEC SP_EXECUTESQL @cmd
+	 END
+END TRY
+BEGIN CATCH
+	PRINT 'Failure CATCH'
+	SELECT @cmd = 'update Landing..jobsequence_test set status = 0, starttime = GETDATE(), endtime = GETDATE() where jobId = ' +  CAST(@jobid AS NVARCHAR(10)) 
+	PRINT @cmd
+	EXEC SP_EXECUTESQL @cmd
+
+END CATCH 
+
+
+END
+
+FETCH NEXT FROM getinfo into @jobid, @jobtype, @col, @sqltext, @sqltextsuccessresult 
+END
+
+
+
+CLOSE getinfo 
+DEALLOCATE getinfo
+
+END
+
+
+
+
+
+
+--select parentid_1 as parentid, jobid from Landing..jobsequence_test where parentid_1 is not NULL
+--UNION 
+--select parentid_2, jobid from Landing..jobsequence_test where parentid_2 is not NULL 
+--UNION 
+--select parentid_3, jobid from Landing..jobsequence_test where parentid_3 is not NULL
+
+
+END
+
+ELSE
+BEGIN
+    -- Display a custom error message if SQL Server Agent is not running
+    PRINT 'SQL Server Agent is not currently running, so the job cannot be started.';
+END
+
+GO
+
+
