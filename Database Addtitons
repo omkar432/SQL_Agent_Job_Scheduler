@@ -1,8 +1,8 @@
 CREATE DATABASE [Landing]
 
 
-CREATE TABLE [Landing].[dbo].[jobsequence_test](
-	[jobid] [int] NULL,
+CREATE TABLE Landing.[dbo].[jobsequence_test](
+	[jobid] [int] NOT NULL,
 	[Jobtype] [varchar](5) NULL,
 	[Jobname] [varchar](255) NULL,
 	[SQLText] [varchar](1000) NULL,
@@ -14,12 +14,15 @@ CREATE TABLE [Landing].[dbo].[jobsequence_test](
 	[isHold] [bit] NULL,
 	[starttime] [datetime] NULL,
 	[endtime] [datetime] NULL
-) 
+	PRIMARY KEY (jobid)
+) ON [PRIMARY]
 
-CREATE   PROCEDURE [dbo].[usp_RunJobSequence]
+
+
+CREATE  PROCEDURE Landing.[dbo].[usp_RunJobSequence]
 AS
-IF EXISTS (SELECT 1 FROM sys.dm_server_services WHERE servicename like '%SQL%SERVER%AGENT%' AND status = 4)
-BEGIN
+--IF EXISTS (SELECT 1 FROM sys.dm_server_services WHERE servicename like '%SQL%SERVER%AGENT%' AND status = 4)
+--BEGIN
 
 update T set T.status = H.run_status, T.endtime = DATEADD(SECOND, 
             ((run_duration / 10000) * 3600) + (((run_duration % 10000) / 100) * 60) + (run_duration % 100),
@@ -31,7 +34,7 @@ and T.starttime = CAST(CAST(H.run_date AS VARCHAR) + ' '
 + LEFT(RIGHT('000000' + CAST(H.run_time AS VARCHAR), 6), 2) + ':'
  + SUBSTRING(RIGHT('000000' + CAST(H.run_time AS VARCHAR), 6), 3, 2)
  + ':' + RIGHT(RIGHT('000000' + CAST(H.run_time AS VARCHAR), 6), 2) AS DATETIME)
-where T.status = 4 
+where T.status = 4 and H.step_id = 0
 
 
 
@@ -42,13 +45,28 @@ BEGIN
 
 DECLARE @col nvarchar(255), @jobid int, @jobtype nvarchar(10), @sqltext nvarchar(500), @sqltextsuccessresult nvarchar(50), @cmd nvarchar(max); 
 
-DECLARE getinfo cursor for select jobid, jobtype, jobname, sqltext, sqltextsucessresult from Landing..jobsequence_test where (parentid_1 is NULL and parentid_2 is NULL and parentid_3 is NULL and status = -1 and isHold = 0)
-UNION 
-select A.jobid, A.jobtype, A.jobname, A.sqltext, A.sqltextsucessresult from Landing..jobsequence_test A inner join Landing..jobsequence_test B on A.parentid_1 = B.jobid where B.status = 1 and A.status = -1 and A.isHold = 0
-UNION
-select A.jobid, A.jobtype, A.jobname, A.sqltext, A.sqltextsucessresult from Landing..jobsequence_test A inner join Landing..jobsequence_test B on A.parentid_2 = B.jobid where B.status = 1 and A.status = -1 and A.isHold = 0
-UNION
-select A.jobid, A.jobtype, A.jobname, A.sqltext, A.sqltextsucessresult from Landing..jobsequence_test A inner join Landing..jobsequence_test B on A.parentid_3 = B.jobid where B.status = 1 and A.status = -1 and A.isHold = 0
+DECLARE getinfo cursor for 
+--select jobid, jobtype, jobname, sqltext, sqltextsucessresult from Landing..jobsequence_test where (parentid_1 is NULL and parentid_2 is NULL and parentid_3 is NULL and status = -1 and isHold = 0)
+--UNION 
+--select A.jobid, A.jobtype, A.jobname, A.sqltext, A.sqltextsucessresult from Landing..jobsequence_test A inner join Landing..jobsequence_test B on A.parentid_1 = B.jobid where B.status = 1 and A.status = -1 and A.isHold = 0
+--UNION
+--select A.jobid, A.jobtype, A.jobname, A.sqltext, A.sqltextsucessresult from Landing..jobsequence_test A inner join Landing..jobsequence_test B on A.parentid_2 = B.jobid where B.status = 1 and A.status = -1 and A.isHold = 0
+--UNION
+--select A.jobid, A.jobtype, A.jobname, A.sqltext, A.sqltextsucessresult from Landing..jobsequence_test A inner join Landing..jobsequence_test B on A.parentid_3 = B.jobid where B.status = 1 and A.status = -1 and A.isHold = 0
+
+with cte as (
+Select jobid, parentid_1 as 'parent_id', jobtype, jobname, sqltext, sqltextsucessresult from Landing.dbo.jobsequence_test where parentid_1 is not NULL and status=-1 and isHold=0
+UNION ALL 
+Select jobid, parentid_2, jobtype, jobname, sqltext, sqltextsucessresult from Landing.dbo.jobsequence_test where parentid_2 is not NULL and status=-1 and isHold=0
+UNION ALL 
+Select jobid, parentid_3, jobtype, jobname, sqltext, sqltextsucessresult from Landing.dbo.jobsequence_test where parentid_3 is not NULL and status=-1 and isHold=0
+
+)
+Select cte.jobid, cte.jobtype, cte.jobname, cte.sqltext, cte.sqltextsucessresult from cte left join Landing.dbo.jobsequence_test B on cte.parent_id = B.jobid group by cte.jobid, cte.jobtype, cte.jobname, cte.sqltext, cte.sqltextsucessresult having count(case when B.status=-1 OR B.status=4 OR B.status=0 then 1 end)=0
+UNION ALL
+select jobid, jobtype, jobname, sqltext, sqltextsucessresult from Landing..jobsequence_test where (parentid_1 is NULL and parentid_2 is NULL and parentid_3 is NULL and status = 
+-1 and isHold = 0)
+
 OPEN getinfo FETCH NEXT FROM getinfo into @jobid, @jobtype, @col, @sqltext, @sqltextsuccessresult
 
 WHILE @@FETCH_STATUS = 0  
@@ -97,7 +115,7 @@ BEGIN TRY
 	EXEC sp_executesql @SQL, @ParamDefinition, @result = @result OUTPUT;
 	Declare @comparevalue nvarchar(50);
 	select @comparevalue = @sqltextsuccessresult
-		IF @result = @comparevalue
+		IF (@result = @comparevalue) OR (@result is NULL and @comparevalue is NULL)
 		BEGIN
 			PRINT 'Success'
 	 SELECT @cmd = 'update Landing..jobsequence_test set status = 1, starttime = GETDATE(), endtime = GETDATE() where jobId = ' +  CAST(@jobid AS NVARCHAR(10)) 
@@ -145,14 +163,19 @@ END
 --select parentid_3, jobid from Landing..jobsequence_test where parentid_3 is not NULL
 
 
-END
+--END
 
-ELSE
-BEGIN
-    -- Display a custom error message if SQL Server Agent is not running
-    PRINT 'SQL Server Agent is not currently running, so the job cannot be started.';
-END
+--ELSE
+--BEGIN
+--    -- Display a custom error message if SQL Server Agent is not running
+--    PRINT 'SQL Server Agent is not currently running, so the job cannot be started.';
+--END
 
-GO
 
+
+
+CREATE TABLE [dbo].[jobsequence_State](
+	[conditionname] [varchar](100) NULL,
+	[value] [bit] NULL
+) ON [PRIMARY]
 
