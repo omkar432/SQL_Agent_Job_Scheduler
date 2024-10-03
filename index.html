@@ -1,6 +1,8 @@
 <html>
     
 <head> 
+
+
     <style type="text/css"> 
         .context-menu { 
             position: absolute; 
@@ -34,10 +36,11 @@
   
 </head> 
     <body>
-        <h2 id="first"> SVG Elements</h2>
-        <i class="fa fa-cloud"></i>
-        <i class="fa fa-lock"></i>
-        <svg width="3000" height="3000" id="svg-drawing"></svg>
+        <h2 id="first"> ServerName : </h2>
+        <!-- <i class="fa fa-cloud"></i>
+        <i class="fa fa-lock"></i> 			-->
+		<button id="startorpausebutton" onclick="confirmationonStartorPause()" style="float: right;">Start the jobs</button>
+        <svg width="3000" height="5000" id="svg-drawing"></svg>
 
         <div id="contextMenu" class="context-menu" style="display: none;">
         <!--    <ul>
@@ -49,9 +52,16 @@
     <script src="https://dagrejs.github.io/project/dagre/latest/dagre.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
     <script src="fetchData.js"></script>
+	<script src="fetchServerName.js"></script>
+	<script src="restartButton.js"></script>
+	
     <script src="createVisualization.js"></script>
     <!-- --> <script src="updateVisualization.js"></script>   
     <script src="toggleHold.js"></script>
     <script src="changeStatus.js"></script>
     <script src="rightClickContextMenu.js"></script>
+	
+	
+	
+	
 </html>

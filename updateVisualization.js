@@ -1,5 +1,20 @@
 
 async function updateVisualization() {
+	
+
+	const response_fetchjobStartorStop = await fetchjobStartorStop();
+	
+	if (response_fetchjobStartorStop[0].isjobStartorStop == 1)
+	{ 
+		var bttn = document.getElementById("startorpausebutton");
+		bttn.innerHTML = "Jobs are Started, Click to Pause the Job Exection Flow"; // Clear previous menu items
+	}
+	else { 
+		var bttn = document.getElementById("startorpausebutton");
+		bttn.innerHTML = "Jobs are Paused, Click to Start the Job Exection Flow"; // Clear previous menu items
+	}
+	
+	
 
     const data = await fetchData();
 
@@ -60,7 +75,7 @@ async function updateVisualization() {
 
 
 function startDataUpdateInterval() {
-    setInterval(updateVisualization, 5000); // Update every 5 seconds
+    setInterval(updateVisualization, 15000); // Update every 15 seconds
 }
 startDataUpdateInterval();
 

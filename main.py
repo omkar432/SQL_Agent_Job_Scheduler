@@ -1,4 +1,5 @@
 import pyodbc
+import config
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -27,7 +28,7 @@ async def read_root() -> dict:
 
 @app.get("/runandViewJobData")
 async def runandViewJobData():
-    cnxn = pyodbc.connect('DRIVER={ODBC Driver 17 for SQL Server};SERVER=LAPTOP-TFUMCQ12;DATABASE=Landing;Trusted_Connection=yes;')
+    cnxn = pyodbc.connect('DRIVER={ODBC Driver 17 for SQL Server};SERVER=' + config.server +';DATABASE=Landing;Trusted_Connection=yes;')
     cursor = cnxn.cursor()
     cursor.execute('''Exec Landing..usp_RunJobsequence''')
     cnxn.commit()  # Ensure any updates are committed
@@ -44,13 +45,39 @@ async def runandViewJobData():
     return graph_data
 
 
+@app.get("/serverName")
+async def serverName():
+    return {"servername": config.server}
 
+
+@app.get("/getStartorStop")
+async def getStartorStop():
+    cnxn = pyodbc.connect('DRIVER={ODBC Driver 17 for SQL Server};SERVER=' + config.server +';DATABASE=Landing;Trusted_Connection=yes;')
+    cursor = cnxn.cursor()
+    job_status_query = "Select value from Landing.dbo.jobsequence_state where conditionname = 'IsJobStartorStop'"
+    cursor.execute(job_status_query)
+    val_getStartorStop = [{"isjobStartorStop" : row.value} for row in cursor.fetchall()]
+    cnxn.close()
+    return val_getStartorStop
+    #return {"Hello"}
+    
+@app.post("/toggleStartPauseStatus")
+async def toggle_StartPauseStatus():
+    try:
+        cnxn = pyodbc.connect('DRIVER={ODBC Driver 17 for SQL Server};SERVER=' + config.server +';DATABASE=Landing;Trusted_Connection=yes;')
+        cursor = cnxn.cursor()
+        cursor.execute("update Landing.dbo.jobsequence_state set value = ~value  where conditionname = 'IsJobStartorStop'")
+        cnxn.commit()
+        cnxn.close()
+        return {"status": "ok"}
+    except Exception as e:
+        return {"error": str(e)} 
 
 @app.post("/toggleHold")
 async def toggle_hold(jobid: str):
     try:
         # Establish database connection
-        cnxn = pyodbc.connect('DRIVER={ODBC Driver 17 for SQL Server};SERVER=LAPTOP-TFUMCQ12;DATABASE=Landing;Trusted_Connection=yes;')
+        cnxn = pyodbc.connect('DRIVER={ODBC Driver 17 for SQL Server};SERVER=' + config.server +';DATABASE=Landing;Trusted_Connection=yes;')
         cursor = cnxn.cursor()
         print(jobid)
         print(type(jobid))
@@ -68,7 +95,7 @@ async def toggle_hold(jobid: str):
 @app.post("/markasOk")
 async def markasOk(jobid: str):
     try:
-        cnxn = pyodbc.connect('DRIVER={ODBC Driver 17 for SQL Server};SERVER=LAPTOP-TFUMCQ12;DATABASE=Landing;Trusted_Connection=yes;')
+        cnxn = pyodbc.connect('DRIVER={ODBC Driver 17 for SQL Server};SERVER=' + config.server +';DATABASE=Landing;Trusted_Connection=yes;')
         cursor = cnxn.cursor()
         query = "Update jobsequence_test set status = 1 where jobid = ?"
         cursor.execute(query, jobid)
@@ -82,7 +109,7 @@ async def markasOk(jobid: str):
 @app.post("/changeStatus")
 async def markasOk(jobid: str, status: str):
     try:
-        cnxn = pyodbc.connect('DRIVER={ODBC Driver 17 for SQL Server};SERVER=LAPTOP-TFUMCQ12;DATABASE=Landing;Trusted_Connection=yes;')
+        cnxn = pyodbc.connect('DRIVER={ODBC Driver 17 for SQL Server};SERVER=' + config.server +';DATABASE=Landing;Trusted_Connection=yes;')
         cursor = cnxn.cursor()
         query = "Update jobsequence_test set status = ? where jobid = ?"
         cursor.execute(query, (status,jobid))

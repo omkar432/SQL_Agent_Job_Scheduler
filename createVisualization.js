@@ -1,4 +1,5 @@
 
+
 async function createVisualization() {
 
     let parent = document.getElementById("svg-drawing")
@@ -7,7 +8,27 @@ async function createVisualization() {
         parent.removeChild(parent.firstChild)
     }
 
-
+	const response_server = await fetchServerName();
+	first.innerHTML = "ServerName : " + response_server.servername;
+	
+	
+	const response_fetchjobStartorStop = await fetchjobStartorStop();
+	console.log("response_fetchjobStartorStop : ", response_fetchjobStartorStop[0].isjobStartorStop);
+		
+	if (response_fetchjobStartorStop[0].isjobStartorStop == 1)
+	{ 
+		console.log("Job is Started");
+		var bttn = document.getElementById("startorpausebutton");
+		bttn.innerHTML = "Jobs are Started, Click to Pause the Job Exection Flow"; // Clear previous menu items
+	}
+	else { 
+		console.log("Job is Paused") 
+		var bttn = document.getElementById("startorpausebutton");
+		bttn.innerHTML = "Jobs are Paused, Click to Start the Job Exection Flow"; // Clear previous menu items
+	}
+		
+	
+	
     const data = await fetchData();
 
     var g = new dagre.graphlib.Graph();
